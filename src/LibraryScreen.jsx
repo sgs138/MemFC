@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useApp } from './App'
-import { getAllMeta, deleteImageDeck, putImageDeck } from './db'
+import { getAllMeta, deleteImageDeck, putImageDeck, getImageDeck } from './db'
 import { compressImage, createImageDeck } from './imageUtils'
+import { downloadDeck, shareDeck, importDeckFromFile, importDeckFromText, canShareFiles } from './deckIO'
 
 const ERROR_MESSAGES = {
   IMAGE_TOO_LARGE: 'Image too large — try a smaller or cropped photo.',
@@ -17,7 +18,10 @@ export default function LibraryScreen() {
   const [importing, setImporting] = useState(false)
   const [pendingBlob, setPendingBlob] = useState(null)   // blob waiting for a name
   const [draftName, setDraftName] = useState('')
+  const [showFabMenu, setShowFabMenu] = useState(false)
+  const [deckMenuId, setDeckMenuId] = useState(null)     // deck id whose action sheet is open
   const fileInputRef = useRef(null)
+  const memfcInputRef = useRef(null)
   const nameInputRef = useRef(null)
 
   useEffect(() => {
@@ -44,6 +48,38 @@ export default function LibraryScreen() {
     }
   }
 
+  async function handleMemfcFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setError(null)
+    setImporting(true)
+    try {
+      const deck = await importDeckFromFile(file)
+      await putImageDeck(deck)
+      nav.annotate(deck.id)
+    } catch (err) {
+      setError(err.message ?? 'Failed to import deck — file may be corrupted.')
+      setImporting(false)
+    }
+  }
+
+  async function handleLoadDemo() {
+    setImporting(true)
+    setError(null)
+    try {
+      const res = await fetch('/demo/canada_provinces.memfc')
+      if (!res.ok) throw new Error('Demo file not found.')
+      const text = await res.text()
+      const deck = await importDeckFromText(text)
+      await putImageDeck(deck)
+      nav.annotate(deck.id)
+    } catch (err) {
+      setError(err.message ?? 'Failed to load demo deck.')
+      setImporting(false)
+    }
+  }
+
   async function handleNameConfirm() {
     const name = draftName.trim()
     if (!name) return
@@ -61,10 +97,33 @@ export default function LibraryScreen() {
   }
 
   async function handleDelete(id, name) {
+    setDeckMenuId(null)
     if (!confirm(`Delete "${name}"? This cannot be undone.`)) return
     await deleteImageDeck(id)
     setDecks(prev => prev.filter(s => s.id !== id))
   }
+
+  async function handleExport(id) {
+    setDeckMenuId(null)
+    try {
+      const deck = await getImageDeck(id)
+      await downloadDeck(deck)
+    } catch {
+      setError('Failed to export deck.')
+    }
+  }
+
+  async function handleShare(id) {
+    setDeckMenuId(null)
+    try {
+      const deck = await getImageDeck(id)
+      await shareDeck(deck)
+    } catch (err) {
+      if (err?.name !== 'AbortError') setError('Failed to share deck.')
+    }
+  }
+
+  const menuDeck = decks.find(d => d.id === deckMenuId)
 
   return (
     <>
@@ -87,6 +146,14 @@ export default function LibraryScreen() {
             <div style={{ fontSize: 48, marginBottom: 16 }}>🖼️</div>
             <p style={{ fontWeight: 600, marginBottom: 8 }}>No FC decks yet</p>
             <p style={{ fontSize: 14 }}>Tap + to import an image and start annotating</p>
+            <button
+              className="btn"
+              style={{ marginTop: 16, fontSize: 14 }}
+              onClick={handleLoadDemo}
+              disabled={importing}
+            >
+              {importing ? 'Loading…' : 'Try a demo deck →'}
+            </button>
           </div>
         )}
 
@@ -97,7 +164,7 @@ export default function LibraryScreen() {
               deck={deck}
               onEdit={() => nav.annotate(deck.id)}
               onQuiz={() => nav.quizConfig(deck.id)}
-              onDelete={() => handleDelete(deck.id, deck.name)}
+              onMenu={() => setDeckMenuId(deck.id)}
             />
           ))}
         </div>
@@ -106,13 +173,20 @@ export default function LibraryScreen() {
         <div style={{ height: 80 }} />
       </div>
 
-      {/* Hidden file input */}
+      {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         style={{ display: 'none' }}
         onChange={handleFileChange}
+      />
+      <input
+        ref={memfcInputRef}
+        type="file"
+        accept=".memfc"
+        style={{ display: 'none' }}
+        onChange={handleMemfcFileChange}
       />
 
       {/* New FC Deck modal */}
@@ -164,11 +238,90 @@ export default function LibraryScreen() {
         </div>
       )}
 
+      {/* FAB import action sheet */}
+      {showFabMenu && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 100 }}
+          onClick={() => setShowFabMenu(false)}
+        >
+          <div
+            style={{ background: 'var(--surface)', width: '100%', borderRadius: 'var(--radius) var(--radius) 0 0', padding: '16px 16px 32px' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>Import</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                className="btn"
+                style={{ textAlign: 'left', padding: '12px 14px' }}
+                onClick={() => { setShowFabMenu(false); fileInputRef.current?.click() }}
+              >
+                📷 Import image
+              </button>
+              <button
+                className="btn"
+                style={{ textAlign: 'left', padding: '12px 14px' }}
+                onClick={() => { setShowFabMenu(false); memfcInputRef.current?.click() }}
+              >
+                📦 Import deck (.memfc)
+              </button>
+              <button
+                className="btn"
+                style={{ textAlign: 'left', padding: '12px 14px' }}
+                onClick={() => { setShowFabMenu(false); handleLoadDemo() }}
+                disabled={importing}
+              >
+                🗺️ Load sample deck (Canada provinces)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deck action sheet */}
+      {deckMenuId && menuDeck && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', zIndex: 100 }}
+          onClick={() => setDeckMenuId(null)}
+        >
+          <div
+            style={{ background: 'var(--surface)', width: '100%', borderRadius: 'var(--radius) var(--radius) 0 0', padding: '16px 16px 32px' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <p style={{ fontWeight: 600, fontSize: 15, marginBottom: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{menuDeck.name}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                className="btn"
+                style={{ textAlign: 'left', padding: '12px 14px' }}
+                onClick={() => handleExport(deckMenuId)}
+              >
+                ⬇️ Export (.memfc)
+              </button>
+              {canShareFiles && (
+                <button
+                  className="btn"
+                  style={{ textAlign: 'left', padding: '12px 14px' }}
+                  onClick={() => handleShare(deckMenuId)}
+                >
+                  📤 Share
+                </button>
+              )}
+              <button
+                className="btn btn-danger"
+                style={{ textAlign: 'left', padding: '12px 14px' }}
+                onClick={() => handleDelete(deckMenuId, menuDeck.name)}
+              >
+                🗑️ Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <button
         className="fab"
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => setShowFabMenu(true)}
         disabled={importing}
-        aria-label="Import image"
+        aria-label="Import"
       >
         {importing ? '…' : '+'}
       </button>
@@ -176,7 +329,7 @@ export default function LibraryScreen() {
   )
 }
 
-function DeckCard({ deck, onEdit, onQuiz, onDelete }) {
+function DeckCard({ deck, onEdit, onQuiz, onMenu }) {
   const lastQuizzed = deck.lastQuizzedAt
     ? formatRelative(deck.lastQuizzedAt)
     : 'never quizzed'
@@ -199,8 +352,8 @@ function DeckCard({ deck, onEdit, onQuiz, onDelete }) {
             {lastQuizzed}
           </div>
         </div>
-        <button className="btn btn-ghost btn-danger" style={{ padding: '4px 8px', fontSize: 18 }} onClick={onDelete} aria-label="Delete deck">
-          🗑
+        <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 18, lineHeight: 1 }} onClick={onMenu} aria-label="Deck options">
+          ···
         </button>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>

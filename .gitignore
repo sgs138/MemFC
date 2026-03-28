@@ -9,3 +9,5 @@ dist/
 Thumbs.db
 .gstack/
 .claude/
+# SVG source used to generate demo deck (large; regenerate with: node scripts/generateCanadaDeck.mjs)
+scripts/canada_provinces_source.svg

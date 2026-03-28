@@ -25,6 +25,7 @@ export function useAnnotateCanvas({
   occludingRegionIdRef,
   occlusionWorkRef,
   currentMaskRef,
+  aiProposalMaskRef,  // Ref<Mask|null> — pending SAM proposal, rendered as cyan overlay
 }) {
   const canvasRef = useRef(null)
   const rafRef    = useRef(null)
@@ -76,6 +77,10 @@ export function useAnnotateCanvas({
         }
         if (occlusionWorkRef.current) {
           drawMaskOverlay(ctx, occlusionWorkRef.current, dr, 30, 30, 30, 200)
+        }
+        // SAM proposal overlay — cyan at 60% alpha, distinct from the blue painted mask
+        if (aiProposalMaskRef?.current) {
+          drawMaskOverlay(ctx, aiProposalMaskRef.current, dr, 0, 200, 220, 153)
         }
       } else if (modeRef.current === OCCLUDING) {
         sorted.forEach((r, i) => {

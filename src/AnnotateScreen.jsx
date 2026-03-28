@@ -5,6 +5,7 @@ import { uuid } from './imageUtils'
 import { createMask, cloneMask, isMaskEmpty, fitRect } from './maskUtils'
 import { useAnnotateCanvas, OVERLAY_COLORS } from './useAnnotateCanvas'
 import { useAnnotateTouch } from './useAnnotateTouch'
+import { useSAM, SAM_IDLE, SAM_LOADING_MODEL, SAM_EMBEDDING, SAM_READY, SAM_ERROR } from './useSAM'
 import RegionDetailModal from './RegionDetailModal'
 
 const IDLE      = 'idle'
@@ -24,6 +25,8 @@ export default function AnnotateScreen({ imageDeckId }) {
   const [paintingSubmode, setPaintingSubmode]     = useState('region') // 'region' | 'occlusion'
   const [saving, setSaving]                     = useState(false)
   const [error, setError]                       = useState(null)
+  const [aiMode, setAiMode]                     = useState(false)     // AI segment toggle
+  const [aiProposalPending, setAiProposalPending] = useState(false)   // SAM result awaiting accept/reject
   const [editingName, setEditingName]           = useState(false)
   const [draftName, setDraftName]               = useState('')
 
@@ -37,6 +40,8 @@ export default function AnnotateScreen({ imageDeckId }) {
   const occlusionWorkRef     = useRef(null)    // occlusion mask work-in-progress
   const occludingRegionIdRef  = useRef(null)    // which region's occlusion is being edited
   const paintingSubmodeRef    = useRef('region') // mirrors paintingSubmode
+  const aiModeRef             = useRef(false)    // mirrors aiMode
+  const aiProposalMaskRef     = useRef(null)     // pending SAM mask awaiting accept/reject
 
   // Keep refs in sync with state
   useEffect(() => { imageDeckRef.current = imageDeck },                   [imageDeck])
@@ -44,17 +49,23 @@ export default function AnnotateScreen({ imageDeckId }) {
   useEffect(() => { erasingRef.current = erasing },                     [erasing])
   useEffect(() => { occludingRegionIdRef.current = occludingRegionId }, [occludingRegionId])
   useEffect(() => { paintingSubmodeRef.current = paintingSubmode },    [paintingSubmode])
+  useEffect(() => { aiModeRef.current = aiMode },                      [aiMode])
 
   // ── Hooks ─────────────────────────────────────────────────────────────────
+  const { aiState, loadProgress, activateAI, deactivateAI, promptPoint } = useSAM()
+
   const { canvasRef, requestDraw } = useAnnotateCanvas({
     imgRef, imageDeckRef, displayRectRef,
     modeRef, occludingRegionIdRef, occlusionWorkRef, currentMaskRef,
+    aiProposalMaskRef,
   })
 
   const { handleTouchStart, handleTouchMove, handleTouchEnd } = useAnnotateTouch({
     canvasRef, displayRectRef, modeRef, erasingRef, paintingSubmodeRef,
     currentMaskRef, occlusionWorkRef, imageDeckRef, requestDraw,
     onRegionTap: regionId => { setSelectedRegionId(regionId); setModalOpen(true) },
+    aiModeRef,
+    onAiTap: handleAiTap,
   })
 
   // ── Load imageDeck ─────────────────────────────────────────────────────────
@@ -102,6 +113,68 @@ export default function AnnotateScreen({ imageDeckId }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  // ── AI segmentation ───────────────────────────────────────────────────────
+  async function handleAiToggle() {
+    if (aiMode) {
+      // Turn off: clear any pending proposal
+      aiProposalMaskRef.current = null
+      setAiProposalPending(false)
+      setAiMode(false)
+      aiModeRef.current = false
+      deactivateAI()
+      requestDraw()
+    } else {
+      // Turn on: load model + compute embedding
+      setAiMode(true)
+      aiModeRef.current = true
+      const deck = imageDeckRef.current
+      if (deck?.imageBlob) {
+        try {
+          await activateAI(deck.imageBlob, deck.id)
+        } catch {
+          setError('AI model failed to load. Check your connection and try again.')
+          setAiMode(false)
+          aiModeRef.current = false
+        }
+      }
+    }
+  }
+
+  async function handleAiTap(nx, ny) {
+    if (!currentMaskRef.current) return
+    const mask = currentMaskRef.current
+    try {
+      const proposal = await promptPoint(nx, ny, mask.width, mask.height)
+      if (proposal) {
+        aiProposalMaskRef.current = proposal
+        setAiProposalPending(true)
+        requestDraw()
+      }
+    } catch {
+      setError('AI segmentation failed — tap again or paint manually.')
+    }
+  }
+
+  function handleAiAccept() {
+    const proposal = aiProposalMaskRef.current
+    const current  = currentMaskRef.current
+    if (proposal && current) {
+      // Merge proposal into current mask (bitwise OR)
+      for (let i = 0; i < current.pixels.length; i++) {
+        current.pixels[i] = current.pixels[i] | proposal.pixels[i]
+      }
+    }
+    aiProposalMaskRef.current = null
+    setAiProposalPending(false)
+    requestDraw()
+  }
+
+  function handleAiReject() {
+    aiProposalMaskRef.current = null
+    setAiProposalPending(false)
+    requestDraw()
   }
 
   // ── Mode management ───────────────────────────────────────────────────────
@@ -153,8 +226,11 @@ export default function AnnotateScreen({ imageDeckId }) {
     occlusionWorkRef.current     = null
     occludingRegionIdRef.current = null
     paintingSubmodeRef.current   = 'region'
+    aiProposalMaskRef.current    = null
     modeRef.current = IDLE; erasingRef.current = false
-    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); requestDraw()
+    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region')
+    setAiMode(false); setAiProposalPending(false); aiModeRef.current = false
+    requestDraw()
   }
 
   function finishPainting() {
@@ -345,25 +421,61 @@ export default function AnnotateScreen({ imageDeckId }) {
           </>
         ) : (
           <>
+            {/* AI toggle button */}
             <button
-              className={`btn ${erasing ? 'btn-danger' : 'btn-ghost'}`}
-              style={{ padding: '4px 10px' }}
-              onClick={() => { const next = !erasing; erasingRef.current = next; setErasing(next) }}
+              className={`btn ${aiMode ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '4px 10px', flexShrink: 0 }}
+              onClick={handleAiToggle}
+              disabled={aiState === SAM_LOADING_MODEL || aiState === SAM_EMBEDDING}
+              title="AI-assisted segmentation"
             >
-              {erasing ? 'Erasing' : 'Erase'}
+              {aiState === SAM_LOADING_MODEL
+                ? `AI ${loadProgress}%`
+                : aiState === SAM_EMBEDDING
+                ? 'AI…'
+                : 'AI'}
             </button>
-            <button
-              className={`btn ${paintingSubmode === 'occlusion' ? 'btn-danger' : 'btn-ghost'}`}
-              style={{ padding: '4px 10px' }}
-              onClick={() => {
-                const next = paintingSubmode === 'occlusion' ? 'region' : 'occlusion'
-                paintingSubmodeRef.current = next; setPaintingSubmode(next)
-              }}
-            >
-              Occlude
-            </button>
-            <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
-            <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishPainting}>Done</button>
+
+            {aiProposalPending ? (
+              /* Proposal pending: show Accept/Reject */
+              <>
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--text-secondary)', margin: '0 4px' }}>Accept segment?</span>
+                <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={handleAiAccept}>Accept</button>
+                <button className="btn" style={{ padding: '4px 10px' }} onClick={handleAiReject}>Reject</button>
+              </>
+            ) : aiMode ? (
+              /* AI mode on, no proposal yet */
+              <>
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--text-secondary)', margin: '0 4px' }}>
+                  {aiState === SAM_READY ? 'Tap to segment' : aiState === SAM_ERROR ? 'AI error' : '…'}
+                </span>
+                <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
+                <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishPainting}>Done</button>
+              </>
+            ) : (
+              /* Normal manual painting mode */
+              <>
+                <button
+                  className={`btn ${erasing ? 'btn-danger' : 'btn-ghost'}`}
+                  style={{ padding: '4px 10px' }}
+                  onClick={() => { const next = !erasing; erasingRef.current = next; setErasing(next) }}
+                >
+                  {erasing ? 'Erasing' : 'Erase'}
+                </button>
+                <button
+                  className={`btn ${paintingSubmode === 'occlusion' ? 'btn-danger' : 'btn-ghost'}`}
+                  style={{ padding: '4px 10px' }}
+                  onClick={() => {
+                    const next = paintingSubmode === 'occlusion' ? 'region' : 'occlusion'
+                    paintingSubmodeRef.current = next; setPaintingSubmode(next)
+                  }}
+                >
+                  Occlude
+                </button>
+                <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
+                <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishPainting}>Done</button>
+              </>
+            )}
           </>
         )}
       </div>

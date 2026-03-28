@@ -23,6 +23,8 @@ export function useAnnotateTouch({
   imageDeckRef,
   requestDraw,
   onRegionTap,   // (regionId: string) => void — called on single tap hit in IDLE
+  aiModeRef,     // Ref<boolean> — when true, single taps call onAiTap instead of painting
+  onAiTap,       // (nx, ny) => void — called on single tap in PAINTING with AI mode on
 }) {
   const touchStateRef = useRef({ type: 'none' })
 
@@ -62,7 +64,10 @@ export function useAnnotateTouch({
         lastX:  pt.x, lastY:  pt.y,
         moved: false,
       }
-      if (isPainting) paintStroke(pt.x, pt.y)
+      // In AI mode, don't paint on touch start — wait for tap-end to call onAiTap
+      if (isPainting && !(aiModeRef?.current && modeRef.current === PAINTING)) {
+        paintStroke(pt.x, pt.y)
+      }
     } else if (e.touches.length >= 2) {
       const p1 = touchToCanvas(e.touches[0])
       const p2 = touchToCanvas(e.touches[1])
@@ -121,8 +126,16 @@ export function useAnnotateTouch({
     e.preventDefault()
     const state = touchStateRef.current
 
+    const isSingleTap = !state.moved && e.changedTouches.length === 1 && e.touches.length === 0
+
+    // Single tap in PAINTING with AI mode → call onAiTap instead of painting
+    if (state.type === 'paint' && isSingleTap && aiModeRef?.current && modeRef.current === PAINTING) {
+      const { nx, ny } = canvasToNorm(state.startX, state.startY)
+      onAiTap?.(nx, ny)
+    }
+
     // Single tap in IDLE → hit-test regions
-    if (state.type === 'pan' && !state.moved && e.changedTouches.length === 1 && e.touches.length === 0) {
+    if (state.type === 'pan' && isSingleTap) {
       const { nx, ny } = canvasToNorm(state.startX, state.startY)
       const deck = imageDeckRef.current
       if (deck) {

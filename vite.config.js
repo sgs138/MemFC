@@ -4,6 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  optimizeDeps: {
+    // @xenova/transformers uses dynamic imports and ONNX workers — exclude from Vite's pre-bundling
+    exclude: ['@xenova/transformers'],
+  },
   plugins: [
     react(),
     VitePWA({
@@ -38,7 +42,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,memfc}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,memfc,wasm}'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\//,

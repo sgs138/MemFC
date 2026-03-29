@@ -116,6 +116,25 @@ export function screenToNorm(clientX, clientY, imgEl) {
   }
 }
 
+/**
+ * Draw a spotlight effect: darken the entire image rect except the mask region.
+ * Non-mask pixels are covered with a dark overlay; mask pixels stay fully visible.
+ */
+export function drawSpotlight(ctx, mask, imgRect, dimAlpha = 128) {
+  const off  = document.createElement('canvas')
+  off.width  = mask.width
+  off.height = mask.height
+  const octx = off.getContext('2d')
+  const data = octx.createImageData(mask.width, mask.height)
+  for (let i = 0; i < mask.pixels.length; i++) {
+    if (!mask.pixels[i]) {
+      data.data[i * 4 + 3] = dimAlpha
+    }
+  }
+  octx.putImageData(data, 0, 0)
+  ctx.drawImage(off, imgRect.x, imgRect.y, imgRect.w, imgRect.h)
+}
+
 // ── Color ─────────────────────────────────────────────────────────────────────
 
 export function hexToRgb(hex) {

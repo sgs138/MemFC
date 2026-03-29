@@ -93,6 +93,24 @@ function setProvinceFills(svgText, colorMap) {
 }
 
 /**
+ * The Newfoundland island path has no class attribute, only id="Newfoundland".
+ * Handle it explicitly wherever we set province colors.
+ */
+function fixNewfoundlandFill(svgText, color) {
+  // id and fill are on separate lines, so use [\s\S]*? to match across lines.
+  // Also replace fill in the style attribute.
+  let result = svgText.replace(
+    /(id="Newfoundland"[\s\S]*?)fill="#[0-9a-fA-F]+"/,
+    `$1fill="${color}"`
+  )
+  result = result.replace(
+    /(id="Newfoundland"[\s\S]*?style="fill:)#[0-9a-fA-F]+/,
+    `$1${color}`
+  )
+  return result
+}
+
+/**
  * Build SVG with only targetClass in fillColor, everything else in bgColor.
  */
 function buildSingleProvinceSvg(svgText, targetClass, fillColor, bgColor) {
@@ -100,7 +118,8 @@ function buildSingleProvinceSvg(svgText, targetClass, fillColor, bgColor) {
   for (const { cssClass } of PROVINCES) {
     colorMap[cssClass] = cssClass === targetClass ? fillColor : bgColor
   }
-  return setProvinceFills(svgText, colorMap)
+  const nfldColor = targetClass === 'NFLD' ? fillColor : bgColor
+  return fixNewfoundlandFill(setProvinceFills(svgText, colorMap), nfldColor)
 }
 
 /**
@@ -111,7 +130,8 @@ function buildColorizedSvg(svgText) {
   for (let i = 0; i < PROVINCES.length; i++) {
     colorMap[PROVINCES[i].cssClass] = PROVINCE_COLORS[i]
   }
-  return setProvinceFills(svgText, colorMap)
+  const nfldColor = PROVINCE_COLORS[PROVINCES.findIndex(p => p.cssClass === 'NFLD')]
+  return fixNewfoundlandFill(setProvinceFills(svgText, colorMap), nfldColor)
 }
 
 /**

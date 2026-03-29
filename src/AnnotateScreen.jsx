@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useApp } from './App'
 import { getImageDeck, putImageDeck } from './db'
 import { uuid } from './imageUtils'
-import { createMask, cloneMask, isMaskEmpty, fitRect } from './maskUtils'
+import { createMask, cloneMask, isMaskEmpty, fitRect, floodFill } from './maskUtils'
 import { useAnnotateCanvas, OVERLAY_COLORS } from './useAnnotateCanvas'
 import { useAnnotateTouch } from './useAnnotateTouch'
 import RegionDetailModal from './RegionDetailModal'
@@ -23,6 +23,7 @@ export default function AnnotateScreen({ imageDeckId }) {
   const [occludingRegionId, setOccludingRegionId] = useState(null)
   const [paintingSubmode, setPaintingSubmode]     = useState('region') // 'region' | 'occlusion'
   const [saving, setSaving]                     = useState(false)
+  const [smartFilled, setSmartFilled]           = useState(false)
   const [error, setError]                       = useState(null)
   const [editingName, setEditingName]           = useState(false)
   const [draftName, setDraftName]               = useState('')
@@ -37,6 +38,7 @@ export default function AnnotateScreen({ imageDeckId }) {
   const occlusionWorkRef     = useRef(null)    // occlusion mask work-in-progress
   const occludingRegionIdRef  = useRef(null)    // which region's occlusion is being edited
   const paintingSubmodeRef    = useRef('region') // mirrors paintingSubmode
+  const prevMaskRef           = useRef(null)     // snapshot before smart fill (for undo)
 
   // Keep refs in sync with state
   useEffect(() => { imageDeckRef.current = imageDeck },                   [imageDeck])
@@ -148,13 +150,36 @@ export default function AnnotateScreen({ imageDeckId }) {
     })
   }
 
+  function runSmartFill() {
+    const mask = currentMaskRef.current
+    const img  = imgRef.current
+    if (!mask || !img || isMaskEmpty(mask)) return
+    prevMaskRef.current = cloneMask(mask)
+    const oc   = document.createElement('canvas')
+    oc.width   = mask.width; oc.height = mask.height
+    oc.getContext('2d').drawImage(img, 0, 0, mask.width, mask.height)
+    const imageData = oc.getContext('2d').getImageData(0, 0, mask.width, mask.height)
+    currentMaskRef.current = floodFill(imageData, mask)
+    setSmartFilled(true)
+    requestDraw()
+  }
+
+  function undoSmartFill() {
+    if (!prevMaskRef.current) return
+    currentMaskRef.current = prevMaskRef.current
+    prevMaskRef.current    = null
+    setSmartFilled(false)
+    requestDraw()
+  }
+
   function cancelPainting() {
     currentMaskRef.current       = null
     occlusionWorkRef.current     = null
     occludingRegionIdRef.current = null
     paintingSubmodeRef.current   = 'region'
+    prevMaskRef.current          = null
     modeRef.current = IDLE; erasingRef.current = false
-    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); requestDraw()
+    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); setSmartFilled(false); requestDraw()
   }
 
   function finishPainting() {
@@ -162,6 +187,8 @@ export default function AnnotateScreen({ imageDeckId }) {
       setError('Paint at least one area before saving.')
       return
     }
+    prevMaskRef.current = null
+    setSmartFilled(false)
     setSelectedRegionId(null); setModalOpen(true)
   }
 
@@ -362,6 +389,10 @@ export default function AnnotateScreen({ imageDeckId }) {
             >
               Occlude
             </button>
+            {smartFilled
+              ? <button className="btn btn-ghost" style={{ padding: '4px 10px' }} onClick={undoSmartFill}>Undo Fill</button>
+              : <button className="btn btn-ghost" style={{ padding: '4px 10px' }} onClick={runSmartFill}>Smart Fill</button>
+            }
             <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
             <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishPainting}>Done</button>
           </>

@@ -6,11 +6,12 @@ const OCCLUDING = 'occluding'
 const BRUSH_PX  = 15  // brush radius in CSS pixels (fixed screen size)
 
 /**
- * Manages all touch interaction on the annotation canvas.
+ * Manages all touch and mouse interaction on the annotation canvas.
  * Handles: single-finger paint strokes, single-finger pan (IDLE),
- * two-finger pinch-to-zoom, and single-tap region selection.
+ * two-finger pinch-to-zoom, single-tap region selection, and mouse equivalents.
  *
- * Returns { handleTouchStart, handleTouchMove, handleTouchEnd }.
+ * Returns { handleTouchStart, handleTouchMove, handleTouchEnd,
+ *           handleMouseDown, handleMouseMove, handleMouseUp }.
  */
 export function useAnnotateTouch({
   canvasRef,
@@ -25,6 +26,7 @@ export function useAnnotateTouch({
   onRegionTap,   // (regionId: string) => void — called on single tap hit in IDLE
 }) {
   const touchStateRef = useRef({ type: 'none' })
+  const mouseStateRef = useRef({ down: false, startX: 0, startY: 0, lastX: 0, lastY: 0, moved: false })
 
   function touchToCanvas(touch) {
     const rect = canvasRef.current.getBoundingClientRect()
@@ -147,5 +149,53 @@ export function useAnnotateTouch({
     }
   }
 
-  return { handleTouchStart, handleTouchMove, handleTouchEnd }
+  function mouseToCanvas(e) {
+    const rect = canvasRef.current.getBoundingClientRect()
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  }
+
+  function handleMouseDown(e) {
+    if (e.button !== 0) return
+    const pt = mouseToCanvas(e)
+    const isPainting = modeRef.current === PAINTING || modeRef.current === OCCLUDING
+    mouseStateRef.current = { down: true, startX: pt.x, startY: pt.y, lastX: pt.x, lastY: pt.y, moved: false }
+    if (isPainting) paintStroke(pt.x, pt.y)
+  }
+
+  function handleMouseMove(e) {
+    const ms = mouseStateRef.current
+    if (!ms.down) return
+    const pt = mouseToCanvas(e)
+    const isPainting = modeRef.current === PAINTING || modeRef.current === OCCLUDING
+    if (Math.abs(pt.x - ms.startX) > 3 || Math.abs(pt.y - ms.startY) > 3) ms.moved = true
+    if (isPainting) {
+      paintStroke(pt.x, pt.y)
+    } else {
+      const dx = pt.x - ms.lastX
+      const dy = pt.y - ms.lastY
+      const dr = displayRectRef.current
+      if (dr) displayRectRef.current = { ...dr, x: dr.x + dx, y: dr.y + dy }
+      requestDraw()
+    }
+    ms.lastX = pt.x; ms.lastY = pt.y
+  }
+
+  function handleMouseUp(e) {
+    if (e.button !== 0) return
+    const ms = mouseStateRef.current
+    if (!ms.down) return
+    // Single click in IDLE → hit-test regions
+    if (modeRef.current !== PAINTING && modeRef.current !== OCCLUDING && !ms.moved) {
+      const { nx, ny } = canvasToNorm(ms.startX, ms.startY)
+      const deck = imageDeckRef.current
+      if (deck) {
+        const sorted = [...deck.regions].sort((a, b) => b.zIndex - a.zIndex)
+        const hit = sorted.find(r => r.mask && hitTestMask(r.mask, nx, ny))
+        if (hit) onRegionTap(hit.id)
+      }
+    }
+    mouseStateRef.current = { ...ms, down: false }
+  }
+
+  return { handleTouchStart, handleTouchMove, handleTouchEnd, handleMouseDown, handleMouseMove, handleMouseUp }
 }

@@ -90,11 +90,6 @@ export function useQuizCanvas({ imgRef, imageDeck, question, region, phase, tapN
       if (r.mask && ov) drawMaskOverlay(ctx, r.mask, dr, ...ov)
     })
 
-    // Spotlight for identify-region: dim everything except the target region
-    if (question.mode === 'identify-region' && region.mask) {
-      drawSpotlight(ctx, region.mask, dr)
-    }
-
     // Draw occlusion fills: median color base, then same highlight tint on top
     sorted.forEach(reg => {
       if (reg.occlusionMask) {
@@ -104,6 +99,12 @@ export function useQuizCanvas({ imgRef, imageDeck, question, region, phase, tapN
         if (ov) drawMaskOverlay(ctx, reg.occlusionMask, dr, ...ov)
       }
     })
+
+    // Spotlight for identify-region: dim everything except the target region.
+    // Must be drawn after occlusion fills so they get dimmed too.
+    if (question.mode === 'identify-region' && region.mask) {
+      drawSpotlight(ctx, region.mask, dr)
+    }
 
     // Tap indicator drawn last so it's always on top
     if (question.mode === 'tap-to-locate' && phase !== 'asking' && tapNorm) {

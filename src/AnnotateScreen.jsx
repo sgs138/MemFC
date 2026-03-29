@@ -5,6 +5,7 @@ import { uuid } from './imageUtils'
 import { createMask, cloneMask, isMaskEmpty, fitRect, floodFill } from './maskUtils'
 import { useAnnotateCanvas, OVERLAY_COLORS } from './useAnnotateCanvas'
 import { useAnnotateTouch } from './useAnnotateTouch'
+import { useSAM } from './useSAM'
 import RegionDetailModal from './RegionDetailModal'
 
 const IDLE      = 'idle'
@@ -53,11 +54,14 @@ export default function AnnotateScreen({ imageDeckId }) {
     modeRef, occludingRegionIdRef, occlusionWorkRef, currentMaskRef,
   })
 
-  const { handleTouchStart, handleTouchMove, handleTouchEnd } = useAnnotateTouch({
+  const { handleTouchStart, handleTouchMove, handleTouchEnd,
+          handleMouseDown, handleMouseMove, handleMouseUp } = useAnnotateTouch({
     canvasRef, displayRectRef, modeRef, erasingRef, paintingSubmodeRef,
     currentMaskRef, occlusionWorkRef, imageDeckRef, requestDraw,
     onRegionTap: regionId => { setSelectedRegionId(regionId); setModalOpen(true) },
   })
+
+  const { samStatus, segmentMask } = useSAM()
 
   // ── Load imageDeck ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -162,6 +166,43 @@ export default function AnnotateScreen({ imageDeckId }) {
     currentMaskRef.current = floodFill(imageData, mask)
     setSmartFilled(true)
     requestDraw()
+  }
+
+  async function runSAMFill() {
+    const mask = currentMaskRef.current
+    const deck = imageDeckRef.current
+    if (!mask || !deck || isMaskEmpty(mask)) return
+
+    const points = sampleMaskPoints(mask, 10)
+    if (points.length === 0) return
+
+    prevMaskRef.current = cloneMask(mask)
+    try {
+      const result = await segmentMask(deck.imageBlob, points)
+      if (modeRef.current !== PAINTING && modeRef.current !== OCCLUDING) return
+      currentMaskRef.current = { width: result.width, height: result.height, pixels: result.pixels }
+      setSmartFilled(true)
+      requestDraw()
+    } catch (err) {
+      console.error('[SAM Fill] error:', err)
+      setError('SAM failed: ' + err.message)
+      if (prevMaskRef.current) currentMaskRef.current = prevMaskRef.current
+      prevMaskRef.current = null
+      setSmartFilled(false)
+    }
+  }
+
+  function sampleMaskPoints(mask, maxPoints) {
+    const pts = []
+    for (let i = 0; i < mask.pixels.length; i++) {
+      if (mask.pixels[i]) {
+        pts.push({ nx: (i % mask.width) / mask.width, ny: ((i / mask.width) | 0) / mask.height })
+      }
+    }
+    if (pts.length === 0) return []
+    if (pts.length <= maxPoints) return pts
+    const step = Math.floor(pts.length / maxPoints)
+    return pts.filter((_, i) => i % step === 0).slice(0, maxPoints)
   }
 
   function undoSmartFill() {
@@ -390,9 +431,17 @@ export default function AnnotateScreen({ imageDeckId }) {
               Occlude
             </button>
             {smartFilled
-              ? <button className="btn btn-ghost" style={{ padding: '4px 10px' }} onClick={undoSmartFill}>Undo Fill</button>
-              : <button className="btn btn-ghost" style={{ padding: '4px 10px' }} onClick={runSmartFill}>Smart Fill</button>
+              ? <button className="btn btn-ghost" style={{ padding: '4px 10px' }} disabled={!!samStatus} onClick={undoSmartFill}>Undo Fill</button>
+              : <button className="btn btn-ghost" style={{ padding: '4px 10px' }} disabled={!!samStatus} onClick={runSmartFill}>Smart Fill</button>
             }
+            <button
+              className="btn btn-ghost"
+              style={{ padding: '4px 10px' }}
+              disabled={!!samStatus}
+              onClick={runSAMFill}
+            >
+              {samStatus === 'resizing' ? 'Resizing…' : samStatus === 'segmenting' ? 'Segmenting…' : 'SAM Fill'}
+            </button>
             <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
             <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishPainting}>Done</button>
           </>
@@ -402,11 +451,14 @@ export default function AnnotateScreen({ imageDeckId }) {
       {/* Canvas */}
       <canvas
         ref={canvasRef}
-        style={{ display: 'block', width: '100%', height: '60vh', flexShrink: 0, touchAction: 'none' }}
+        style={{ display: 'block', width: '100%', height: '60vh', flexShrink: 0, touchAction: 'none', cursor: 'crosshair' }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
       />
 
       {/* Quizzable fields */}

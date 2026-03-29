@@ -5,7 +5,7 @@
  * as a flat Uint8Array of 0/1 values, one byte per pixel.
  */
 
-const MASK_MAX_DIM = 256
+export const MASK_MAX_DIM = 256
 
 // ── Mask lifecycle ────────────────────────────────────────────────────────────
 

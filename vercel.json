@@ -1,0 +1,7 @@
+{
+"functions": {
+    "api/sam.js": {
+      "maxDuration": 60
+    }
+  }
+}

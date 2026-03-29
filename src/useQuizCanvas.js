@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { drawMaskOverlay, fitRect, medianMaskColor } from './maskUtils'
+import { drawMaskOverlay, drawSpotlight, fitRect, medianMaskColor } from './maskUtils'
 
 /**
  * Manages the quiz canvas: drawing overlays and occlusion fills.
@@ -82,9 +82,6 @@ export function useQuizCanvas({ imgRef, imageDeck, question, region, phase, tapN
             : [136, 136, 136, 25])
         })
       }
-    } else {
-      // identify-region
-      if (region.mask) overlayColors.set(region.id, [41, 121, 255, 110])
     }
 
     // Draw region overlays
@@ -92,6 +89,11 @@ export function useQuizCanvas({ imgRef, imageDeck, question, region, phase, tapN
       const ov = overlayColors.get(r.id)
       if (r.mask && ov) drawMaskOverlay(ctx, r.mask, dr, ...ov)
     })
+
+    // Spotlight for identify-region: dim everything except the target region
+    if (question.mode === 'identify-region' && region.mask) {
+      drawSpotlight(ctx, region.mask, dr)
+    }
 
     // Draw occlusion fills: median color base, then same highlight tint on top
     sorted.forEach(reg => {

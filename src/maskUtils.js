@@ -135,6 +135,52 @@ export function drawSpotlight(ctx, mask, imgRect, dimAlpha = 128) {
   ctx.drawImage(off, imgRect.x, imgRect.y, imgRect.w, imgRect.h)
 }
 
+/**
+ * Flood-fill the mask outward from its painted pixels using color similarity.
+ * imageData: ImageData rendered at mask dimensions.
+ * threshold: max sum of |r|+|g|+|b| distance from the average seed color (0–765).
+ * Returns a new expanded mask without mutating the original.
+ */
+export function floodFill(imageData, mask, threshold = 60) {
+  const { width, height } = mask
+  const { data } = imageData
+  const result  = new Uint8Array(mask.pixels)
+  const visited = new Uint8Array(width * height)
+  const queue   = []
+
+  // Seed queue with all currently painted pixels
+  for (let i = 0; i < mask.pixels.length; i++) {
+    if (mask.pixels[i]) { queue.push(i); visited[i] = 1 }
+  }
+  if (queue.length === 0) return { width, height, pixels: result }
+
+  // Average color of seed pixels — used as the target color for expansion
+  let sr = 0, sg = 0, sb = 0
+  for (const i of queue) { sr += data[i*4]; sg += data[i*4+1]; sb += data[i*4+2] }
+  const ar = sr / queue.length, ag = sg / queue.length, ab = sb / queue.length
+
+  // BFS: expand to 4-connected neighbors within color threshold
+  let head = 0
+  while (head < queue.length) {
+    const i = queue[head++]
+    const x = i % width
+    const y = (i / width) | 0
+    if (x > 0)           tryExpand(i - 1)
+    if (x < width  - 1)  tryExpand(i + 1)
+    if (y > 0)           tryExpand(i - width)
+    if (y < height - 1)  tryExpand(i + width)
+  }
+
+  function tryExpand(j) {
+    if (visited[j]) return
+    visited[j] = 1
+    const dist = Math.abs(data[j*4] - ar) + Math.abs(data[j*4+1] - ag) + Math.abs(data[j*4+2] - ab)
+    if (dist <= threshold) { result[j] = 1; queue.push(j) }
+  }
+
+  return { width, height, pixels: result }
+}
+
 // ── Color ─────────────────────────────────────────────────────────────────────
 
 export function hexToRgb(hex) {

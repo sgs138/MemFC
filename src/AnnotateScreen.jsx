@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Pencil, Eraser, EyeOff, PaintBucket, Sparkles, RotateCcw, HelpCircle, Loader2 } from 'lucide-react'
 import { useApp } from './App'
 import { getImageDeck, putImageDeck } from './db'
 import { uuid } from './imageUtils'
@@ -11,6 +12,21 @@ import RegionDetailModal from './RegionDetailModal'
 const IDLE      = 'idle'
 const PAINTING  = 'painting'
 const OCCLUDING = 'occluding'
+
+function ToolButton({ icon, label, active, helpMode, disabled, onClick }) {
+  return (
+    <button
+      className={`btn ${active ? 'btn-primary' : 'btn-ghost'}`}
+      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 10px', gap: 2, minWidth: 44 }}
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={label}
+    >
+      {icon}
+      {helpMode && <span style={{ fontSize: 10, lineHeight: 1 }}>{label}</span>}
+    </button>
+  )
+}
 
 export default function AnnotateScreen({ imageDeckId }) {
   const { nav } = useApp()
@@ -28,6 +44,7 @@ export default function AnnotateScreen({ imageDeckId }) {
   const [error, setError]                       = useState(null)
   const [editingName, setEditingName]           = useState(false)
   const [draftName, setDraftName]               = useState('')
+  const [helpMode, setHelpMode]                 = useState(false)
 
   // ── Refs (mutated during touch events without causing re-renders) ─────────
   const imgRef               = useRef(null)    // loaded HTMLImageElement
@@ -120,7 +137,7 @@ export default function AnnotateScreen({ imageDeckId }) {
     occlusionWorkRef.current = createMask(imgW, imgH)
     paintingSubmodeRef.current = 'region'
     modeRef.current = PAINTING; erasingRef.current = false
-    setMode(PAINTING); setErasing(false); setPaintingSubmode('region'); requestDraw()
+    setMode(PAINTING); setErasing(false); setPaintingSubmode('region'); setHelpMode(false); requestDraw()
   }
 
   function startOccluding(regionId) {
@@ -142,7 +159,7 @@ export default function AnnotateScreen({ imageDeckId }) {
     occlusionWorkRef.current     = null
     occludingRegionIdRef.current = null
     modeRef.current = IDLE; erasingRef.current = false
-    setOccludingRegionId(null); setMode(IDLE); setErasing(false)
+    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setHelpMode(false)
     const deck = imageDeckRef.current
     save({
       ...deck,
@@ -220,7 +237,7 @@ export default function AnnotateScreen({ imageDeckId }) {
     paintingSubmodeRef.current   = 'region'
     prevMaskRef.current          = null
     modeRef.current = IDLE; erasingRef.current = false
-    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); setSmartFilled(false); requestDraw()
+    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); setSmartFilled(false); setHelpMode(false); requestDraw()
   }
 
   function finishPainting() {
@@ -229,7 +246,7 @@ export default function AnnotateScreen({ imageDeckId }) {
       return
     }
     prevMaskRef.current = null
-    setSmartFilled(false)
+    setSmartFilled(false); setHelpMode(false)
     setSelectedRegionId(null); setModalOpen(true)
   }
 
@@ -388,65 +405,109 @@ export default function AnnotateScreen({ imageDeckId }) {
       )}
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0, alignItems: 'center' }}>
-        {mode === IDLE ? (
-          <>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1, margin: 0 }}>
-              {imageDeck.regions.length === 0 ? 'Tap "+ Region" to start painting' : 'Tap a region to edit · pinch to zoom'}
-            </p>
-            <button className="btn btn-primary" style={{ padding: '4px 12px', flexShrink: 0 }} onClick={startNewRegion}>+ Region</button>
-          </>
-        ) : mode === OCCLUDING ? (
-          <>
-            <button
-              className={`btn ${erasing ? 'btn-danger' : 'btn-ghost'}`}
-              style={{ padding: '4px 10px' }}
-              onClick={() => { const n = !erasing; erasingRef.current = n; setErasing(n) }}
-            >
-              {erasing ? 'Erasing' : 'Erase'}
-            </button>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1, margin: '0 4px', textAlign: 'center' }}>
-              Hiding: {occludingLabel}
-            </p>
-            <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
-            <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishOccluding}>Done</button>
-          </>
-        ) : (
-          <>
-            <button
-              className={`btn ${erasing ? 'btn-danger' : 'btn-ghost'}`}
-              style={{ padding: '4px 10px' }}
-              onClick={() => { const next = !erasing; erasingRef.current = next; setErasing(next) }}
-            >
-              {erasing ? 'Erasing' : 'Erase'}
-            </button>
-            <button
-              className={`btn ${paintingSubmode === 'occlusion' ? 'btn-danger' : 'btn-ghost'}`}
-              style={{ padding: '4px 10px' }}
-              onClick={() => {
-                const next = paintingSubmode === 'occlusion' ? 'region' : 'occlusion'
-                paintingSubmodeRef.current = next; setPaintingSubmode(next)
-              }}
-            >
-              Occlude
-            </button>
-            {smartFilled
-              ? <button className="btn btn-ghost" style={{ padding: '4px 10px' }} disabled={!!samStatus} onClick={undoSmartFill}>Undo Fill</button>
-              : <button className="btn btn-ghost" style={{ padding: '4px 10px' }} disabled={!!samStatus} onClick={runSmartFill}>Smart Fill</button>
-            }
+      {mode === IDLE ? (
+        <div style={{ display: 'flex', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0, alignItems: 'center' }}>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1, margin: 0 }}>
+            {imageDeck.regions.length === 0 ? 'Tap "+ Region" to start painting' : 'Tap a region to edit · pinch to zoom'}
+          </p>
+          <button className="btn btn-primary" style={{ padding: '4px 12px', flexShrink: 0 }} onClick={startNewRegion}>+ Region</button>
+        </div>
+      ) : (
+        <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          {/* Row 1: Cancel / Done */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 12px 0' }}>
+            <button className="btn" style={{ minWidth: 64, padding: '4px 12px' }} onClick={cancelPainting}>Cancel</button>
+            {mode === OCCLUDING && (
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)', alignSelf: 'center' }}>
+                Hiding: {occludingLabel}
+              </span>
+            )}
+            <button className="btn btn-primary" style={{ minWidth: 64, padding: '4px 12px' }} onClick={mode === OCCLUDING ? finishOccluding : finishPainting}>Done</button>
+          </div>
+          {/* Row 2: Tool icons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px' }}>
+            {/* Paint tool — only in PAINTING mode */}
+            {mode === PAINTING && (
+              <ToolButton
+                icon={<Pencil size={18} />}
+                label="Paint"
+                active={!erasing && paintingSubmode === 'region'}
+                helpMode={helpMode}
+                onClick={() => {
+                  erasingRef.current = false; paintingSubmodeRef.current = 'region'
+                  setErasing(false); setPaintingSubmode('region'); setHelpMode(false)
+                }}
+              />
+            )}
+            {/* Erase */}
+            <ToolButton
+              icon={<Eraser size={18} />}
+              label="Erase"
+              active={erasing}
+              helpMode={helpMode}
+              onClick={() => { const n = !erasing; erasingRef.current = n; setErasing(n); setHelpMode(false) }}
+            />
+            {/* Occlude — only in PAINTING mode */}
+            {mode === PAINTING && (
+              <ToolButton
+                icon={<EyeOff size={18} />}
+                label="Occlude"
+                active={paintingSubmode === 'occlusion'}
+                helpMode={helpMode}
+                onClick={() => {
+                  const next = paintingSubmode === 'occlusion' ? 'region' : 'occlusion'
+                  paintingSubmodeRef.current = next; setPaintingSubmode(next); setHelpMode(false)
+                }}
+              />
+            )}
+            {/* Simple Fill — only when painting (not erasing, not occluding) */}
+            {mode === PAINTING && paintingSubmode !== 'occlusion' && !erasing && (
+              <ToolButton
+                icon={<PaintBucket size={18} />}
+                label="Simple Fill"
+                active={false}
+                helpMode={helpMode}
+                disabled={!!samStatus}
+                onClick={() => { runSmartFill(); setHelpMode(false) }}
+              />
+            )}
+            {/* Magic Fill — only when painting (not erasing, not occluding) */}
+            {mode === PAINTING && paintingSubmode !== 'occlusion' && !erasing && (
+              <ToolButton
+                icon={samStatus
+                  ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                  : <Sparkles size={18} />}
+                label="Magic Fill"
+                active={false}
+                helpMode={helpMode}
+                disabled={!!samStatus}
+                onClick={() => { runSAMFill(); setHelpMode(false) }}
+              />
+            )}
+            {/* Undo Fill — temporary, appears after any fill */}
+            {smartFilled && mode === PAINTING && paintingSubmode !== 'occlusion' && !erasing && (
+              <ToolButton
+                icon={<RotateCcw size={18} />}
+                label="Undo"
+                active={false}
+                helpMode={helpMode}
+                disabled={!!samStatus}
+                onClick={() => { undoSmartFill(); setHelpMode(false) }}
+              />
+            )}
+            <div style={{ flex: 1 }} />
+            {/* Help toggle */}
             <button
               className="btn btn-ghost"
-              style={{ padding: '4px 10px' }}
-              disabled={!!samStatus}
-              onClick={runSAMFill}
+              style={{ padding: '4px 6px', color: helpMode ? 'var(--primary)' : 'var(--text-secondary)' }}
+              onClick={() => setHelpMode(h => !h)}
+              aria-label="Toggle help labels"
             >
-              {samStatus === 'resizing' ? 'Resizing…' : samStatus === 'segmenting' ? 'Segmenting…' : 'SAM Fill'}
+              <HelpCircle size={18} />
             </button>
-            <button className="btn" style={{ padding: '4px 10px' }} onClick={cancelPainting}>Cancel</button>
-            <button className="btn btn-primary" style={{ padding: '4px 10px' }} onClick={finishPainting}>Done</button>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Canvas */}
       <canvas

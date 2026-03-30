@@ -408,8 +408,9 @@ export default function AnnotateScreen({ imageDeckId }) {
       {mode === IDLE ? (
         <div style={{ display: 'flex', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0, alignItems: 'center' }}>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', flex: 1, margin: 0 }}>
-            {imageDeck.regions.length === 0 ? 'Tap + to start painting' : 'Tap a region to edit · pinch to zoom'}
+            {imageDeck.regions.length === 0 ? 'Tap "+ Region" to start painting' : 'Tap a region to edit · pinch to zoom'}
           </p>
+          <button className="btn btn-primary" style={{ padding: '4px 12px', flexShrink: 0 }} onClick={startNewRegion}>+ Region</button>
         </div>
       ) : (
         <div style={{ borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -580,23 +581,6 @@ export default function AnnotateScreen({ imageDeckId }) {
           </div>
         ))}
       </div>
-
-      {/* FAB: + Region */}
-      {mode === IDLE && (
-        <button
-          className="btn btn-primary"
-          onClick={startNewRegion}
-          style={{
-            position: 'fixed', bottom: 24, right: 20,
-            borderRadius: 28, padding: '12px 20px',
-            fontSize: 15, fontWeight: 600,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
-            zIndex: 100,
-          }}
-        >
-          + Region
-        </button>
-      )}
 
       {modalOpen && (
         <RegionDetailModal

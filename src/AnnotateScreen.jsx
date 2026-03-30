@@ -137,7 +137,7 @@ export default function AnnotateScreen({ imageDeckId }) {
     occlusionWorkRef.current = createMask(imgW, imgH)
     paintingSubmodeRef.current = 'region'
     modeRef.current = PAINTING; erasingRef.current = false
-    setMode(PAINTING); setErasing(false); setPaintingSubmode('region'); requestDraw()
+    setMode(PAINTING); setErasing(false); setPaintingSubmode('region'); setHelpMode(false); requestDraw()
   }
 
   function startOccluding(regionId) {
@@ -159,7 +159,7 @@ export default function AnnotateScreen({ imageDeckId }) {
     occlusionWorkRef.current     = null
     occludingRegionIdRef.current = null
     modeRef.current = IDLE; erasingRef.current = false
-    setOccludingRegionId(null); setMode(IDLE); setErasing(false)
+    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setHelpMode(false)
     const deck = imageDeckRef.current
     save({
       ...deck,
@@ -237,7 +237,7 @@ export default function AnnotateScreen({ imageDeckId }) {
     paintingSubmodeRef.current   = 'region'
     prevMaskRef.current          = null
     modeRef.current = IDLE; erasingRef.current = false
-    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); setSmartFilled(false); requestDraw()
+    setOccludingRegionId(null); setMode(IDLE); setErasing(false); setPaintingSubmode('region'); setSmartFilled(false); setHelpMode(false); requestDraw()
   }
 
   function finishPainting() {
@@ -246,7 +246,7 @@ export default function AnnotateScreen({ imageDeckId }) {
       return
     }
     prevMaskRef.current = null
-    setSmartFilled(false)
+    setSmartFilled(false); setHelpMode(false)
     setSelectedRegionId(null); setModalOpen(true)
   }
 

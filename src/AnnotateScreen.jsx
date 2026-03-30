@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Pencil, Eraser, Eye, PaintBucket, Sparkles, RotateCcw, HelpCircle, Loader2 } from 'lucide-react'
+import { Pencil, Eraser, EyeOff, PaintBucket, Sparkles, RotateCcw, HelpCircle, Loader2 } from 'lucide-react'
 import { useApp } from './App'
 import { getImageDeck, putImageDeck } from './db'
 import { uuid } from './imageUtils'
@@ -450,7 +450,7 @@ export default function AnnotateScreen({ imageDeckId }) {
             {/* Occlude — only in PAINTING mode */}
             {mode === PAINTING && (
               <ToolButton
-                icon={<Eye size={18} />}
+                icon={<EyeOff size={18} />}
                 label="Occlude"
                 active={paintingSubmode === 'occlusion'}
                 helpMode={helpMode}

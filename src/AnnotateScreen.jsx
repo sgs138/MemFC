@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Pencil, Eraser, Eye, PaintBucket, Sparkles, RotateCcw, HelpCircle } from 'lucide-react'
+import { Pencil, Eraser, Eye, PaintBucket, Sparkles, RotateCcw, HelpCircle, Loader2 } from 'lucide-react'
 import { useApp } from './App'
 import { getImageDeck, putImageDeck } from './db'
 import { uuid } from './imageUtils'
@@ -474,7 +474,9 @@ export default function AnnotateScreen({ imageDeckId }) {
             {/* Magic Fill — only in PAINTING mode */}
             {mode === PAINTING && (
               <ToolButton
-                icon={samStatus ? <Sparkles size={18} style={{ opacity: 0.4 }} /> : <Sparkles size={18} />}
+                icon={samStatus
+                  ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                  : <Sparkles size={18} />}
                 label="Magic Fill"
                 active={false}
                 helpMode={helpMode}

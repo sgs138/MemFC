@@ -460,8 +460,8 @@ export default function AnnotateScreen({ imageDeckId }) {
                 }}
               />
             )}
-            {/* Simple Fill — only in PAINTING mode */}
-            {mode === PAINTING && (
+            {/* Simple Fill — only in PAINTING mode, not when occluding */}
+            {mode === PAINTING && paintingSubmode !== 'occlusion' && (
               <ToolButton
                 icon={<PaintBucket size={18} />}
                 label="Simple Fill"
@@ -471,8 +471,8 @@ export default function AnnotateScreen({ imageDeckId }) {
                 onClick={() => { runSmartFill(); setHelpMode(false) }}
               />
             )}
-            {/* Magic Fill — only in PAINTING mode */}
-            {mode === PAINTING && (
+            {/* Magic Fill — only in PAINTING mode, not when occluding */}
+            {mode === PAINTING && paintingSubmode !== 'occlusion' && (
               <ToolButton
                 icon={samStatus
                   ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
@@ -485,7 +485,7 @@ export default function AnnotateScreen({ imageDeckId }) {
               />
             )}
             {/* Undo Fill — temporary, appears after any fill */}
-            {smartFilled && mode === PAINTING && (
+            {smartFilled && mode === PAINTING && paintingSubmode !== 'occlusion' && (
               <ToolButton
                 icon={<RotateCcw size={18} />}
                 label="Undo"
